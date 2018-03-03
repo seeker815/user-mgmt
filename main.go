@@ -50,19 +50,21 @@ func main() {
 
 			matchedPubkey, _ := regexp.MatchString("^ssh-rsa\\s\\S*\\s[a-zA-Z0-9-@]*", cmnt.Body)
 			if matchedPubkey == true {
-				pubKey := cmnt.Body
-				fmt.Println("SSH Pub Key:", pubKey)
+				pubKey = cmnt.Body
 				continue
 			}
 
 			matchedHash, _ := regexp.MatchString("^[0-9a-zA-Z\\S]+$", cmnt.Body)
 			if matchedHash == true {
-				hashSHA := cmnt.Body
-				fmt.Println("Matched SHA512:", hashSHA)
+				hashSHA = cmnt.Body
 				continue
 			}
 
 		}
+		mb := User{"true", hashSHA, pubKey, "bash", "present", issue.Fields.Assignee.Name}
+		fmt.Println(mb)
+		userJSON, _ := json.Marshal(mb)
+		fmt.Println(string(userJSON))
 	}
 
 	username, token := os.Getenv("GITHUB_USER"), os.Getenv("GITHUB_TOKEN")
@@ -79,11 +81,6 @@ func main() {
 		panic(err)
 	}
 
-	mb := User{"true", hashSHA, pubKey, "bash", "present", issue.Fields.Assignee.Name}
-	fmt.Println(mb)
-	userJSON, _ := json.Marshal(mb)
-	fmt.Println(string(userJSON))
-
 	fmt.Printf("\n%v\n", github.Stringify(user.Login))
 	fmt.Printf("\n%v\n", github.Stringify(user.OrganizationsURL))
 	s := github.Stringify(user.Login)
@@ -99,5 +96,6 @@ func main() {
 
 	fmt.Println("Git response", fc, rc, resp)
 
-	
+	// git PUT
+
 }
