@@ -1,14 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
+	b64 "encoding/base64"
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	jira "github.com/andygrunwald/go-jira"
+	yaml2 "github.com/ghodss/yaml"
 	github "github.com/google/go-github/github"
+	yaml "gopkg.in/yaml.v2"
 )
 
 var (
@@ -16,20 +20,37 @@ var (
 	hashSHA    string
 	pubKey     string
 	gitUser    string
+	userJSON   []byte
+	gitRepo    string
+	gitPath    string
 )
 
 //User struct to manage user credentials
 type User struct {
-	Admin    string
-	Password string
-	Pubkey   string
-	Shell    string
-	State    string
-	Username string
+	Admin          string `yaml:"admin"`
+	HashedPassword string `yaml:"hashed_password"`
+	Pubkeys        string `yaml:"pubkeys"`
+	Shell          string `yaml:"shell"`
+	State          string `yaml:"state"`
+	Username       string `yaml:"username"`
 }
 
 func main() {
-	issue, _, err := jiraClient.Issue.Get("IXE-9575", nil)
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("Enter JIRA ID for user credentials: ")
+	ji, _ := reader.ReadString('\n')
+	jiraID := strings.TrimSpace(ji)
+
+	readerGit := bufio.NewReader(os.Stdin)
+	fmt.Println("Enter the git repository and path separated with a comma")
+	gr, _ := readerGit.ReadString('\n')
+	st := strings.Split(gr, ",")
+	if len(st) == 2 {
+		gitRepo = strings.TrimSpace(st[0])
+		gitPath = strings.TrimSpace(st[1])
+	}
+
+	issue, _, err := jiraClient.Issue.Get(jiraID, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -39,9 +60,7 @@ func main() {
 	fmt.Printf("Priority: %s\n", issue.Fields.Priority.Name)
 	fmt.Printf("Assignee: %s\n", issue.Fields.Assignee.Name)
 
-	// get jira comments (slice of struct pointers)
 	cmntList := issue.Fields.Comments.Comments
-
 	if len(cmntList) == 0 {
 		fmt.Println("No Pubkey/password has been entered, nil!")
 	} else {
@@ -50,7 +69,8 @@ func main() {
 
 			matchedPubkey, _ := regexp.MatchString("^ssh-rsa\\s\\S*\\s[a-zA-Z0-9-@]*", cmnt.Body)
 			if matchedPubkey == true {
-				pubKey = cmnt.Body
+				pubKey = "[" + strings.TrimSpace(cmnt.Body) + "]"
+				fmt.Println(pubKey)
 				continue
 			}
 
@@ -62,8 +82,11 @@ func main() {
 
 		}
 		mb := User{"true", hashSHA, pubKey, "bash", "present", issue.Fields.Assignee.Name}
-		fmt.Println(mb)
-		userJSON, _ := json.Marshal(mb)
+		userJSON, err = yaml.Marshal(mb)
+		if err != nil {
+			fmt.Printf("err: %v\n", err)
+			return
+		}
 		fmt.Println(string(userJSON))
 	}
 
@@ -88,14 +111,45 @@ func main() {
 
 	rcg := &github.RepositoryContentGetOptions{Ref: "master"}
 
-	// git pull
-	fc, rc, resp, err := gitClient.Repositories.GetContents(ctx, gitUser, "s3-registry", "hooks/build", rcg)
+	fc, _, _, err := gitClient.Repositories.GetContents(ctx, gitUser, gitRepo, gitPath, rcg)
 	if err != nil {
 		fmt.Printf("\nGithub pull failed: %v\n", err)
 	}
 
-	fmt.Println("Git response", fc, rc, resp)
+	sDec, err := b64.StdEncoding.DecodeString(*fc.Content)
+	fmt.Println("content", string(sDec))
 
-	// git PUT
+	sDecs := append(sDec, userJSON...)
+	fmt.Println("appended", string(sDecs))
+
+	y, err := yaml2.JSONToYAML(sDec)
+	if err != nil {
+		fmt.Printf("err: %v\n", err)
+		return
+	}
+	fmt.Println("content in yaml", string(y))
+	ya := append(y, userJSON...)
+	fmt.Println("appended", string(ya))
+
+	author := &github.CommitAuthor{
+		Name:  user.Name,
+		Email: user.Email,
+		Login: user.Login,
+	}
+
+	commitMsg := fmt.Sprintf("Updating user credentials for %s", jiraID)
+
+	rcp := &github.RepositoryContentFileOptions{
+		Message:   &commitMsg,
+		Content:   y,
+		SHA:       fc.SHA,
+		Committer: author,
+	}
+
+	response, _, err := gitClient.Repositories.UpdateFile(ctx, gitUser, gitRepo, gitPath, rcp)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Commit status", response)
 
 }
