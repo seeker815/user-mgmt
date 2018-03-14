@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	jira "github.com/andygrunwald/go-jira"
-	yaml2 "github.com/ghodss/yaml"
 	github "github.com/google/go-github/github"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -18,21 +17,22 @@ import (
 var (
 	jiraClient *jira.Client
 	hashSHA    string
-	pubKey     string
+	pubKey     []string
 	gitUser    string
 	userJSON   []byte
 	gitRepo    string
 	gitPath    string
+	mb         User
 )
 
 //User struct to manage user credentials
 type User struct {
-	Admin          string `yaml:"admin"`
-	HashedPassword string `yaml:"hashed_password"`
-	Pubkeys        string `yaml:"pubkeys"`
-	Shell          string `yaml:"shell"`
-	State          string `yaml:"state"`
-	Username       string `yaml:"username"`
+	Admin          string   `yaml:"admin"`
+	HashedPassword string   `yaml:"hashed_password"`
+	Pubkeys        []string `yaml:"pubkeys"`
+	Shell          string   `yaml:"shell"`
+	State          string   `yaml:"state"`
+	Username       string   `yaml:"username"`
 }
 
 func main() {
@@ -69,7 +69,7 @@ func main() {
 
 			matchedPubkey, _ := regexp.MatchString("^ssh-rsa\\s\\S*\\s[a-zA-Z0-9-@]*", cmnt.Body)
 			if matchedPubkey == true {
-				pubKey = "[" + strings.TrimSpace(cmnt.Body) + "]"
+				pubKey =  []string{strings.TrimSpace(cmnt.Body)}
 				fmt.Println(pubKey)
 				continue
 			}
@@ -81,7 +81,7 @@ func main() {
 			}
 
 		}
-		mb := User{"true", hashSHA, pubKey, "bash", "present", issue.Fields.Assignee.Name}
+		mb = User{"true", hashSHA, pubKey, "bash", "present", issue.Fields.Assignee.Name}
 		userJSON, err = yaml.Marshal(mb)
 		if err != nil {
 			fmt.Printf("err: %v\n", err)
@@ -117,39 +117,62 @@ func main() {
 	}
 
 	sDec, err := b64.StdEncoding.DecodeString(*fc.Content)
+
+	originalYaml := struct {
+		UserList []User `yaml:"user_list"`
+	}{}
+
 	fmt.Println("content", string(sDec))
 
-	sDecs := append(sDec, userJSON...)
-	fmt.Println("appended", string(sDecs))
-
-	y, err := yaml2.JSONToYAML(sDec)
+	err = yaml.Unmarshal(sDec, &originalYaml)
 	if err != nil {
-		fmt.Printf("err: %v\n", err)
-		return
-	}
-	fmt.Println("content in yaml", string(y))
-	ya := append(y, userJSON...)
-	fmt.Println("appended", string(ya))
-
-	author := &github.CommitAuthor{
-		Name:  user.Name,
-		Email: user.Email,
-		Login: user.Login,
+		fmt.Println("Error unmarshalling yaml: ", err)
 	}
 
-	commitMsg := fmt.Sprintf("Updating user credentials for %s", jiraID)
+	originalYaml.UserList = append(originalYaml.UserList, mb)
 
-	rcp := &github.RepositoryContentFileOptions{
-		Message:   &commitMsg,
-		Content:   y,
-		SHA:       fc.SHA,
-		Committer: author,
-	}
+	b, _ := yaml.Marshal(originalYaml)
 
-	response, _, err := gitClient.Repositories.UpdateFile(ctx, gitUser, gitRepo, gitPath, rcp)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("Commit status", response)
+	//fmt.Println("content", string(sDec))
+	fmt.Println("new content\n", string(b))
+
+	// sDecs := append(sDec, userJSON...)
+	// fmt.Println("appended", string(sDecs))
+
+	// y, err := yaml2.JSONToYAML(sDec)
+	// if err != nil {
+	// 	fmt.Printf("err: %v\n", err)
+	// 	return
+	// }
+	// fmt.Println("content in yaml", string(y))
+	// ya := append(y, userJSON...)
+	// fmt.Println("appended", string(ya))
+
+	// yy, err := yaml2.JSONToYAML(ya)
+	// if err != nil {
+	// 	fmt.Printf("err: %v\n", err)
+	// 	return
+	// }
+	// fmt.Println("-----final string", string(yy))
+	// author := &github.CommitAuthor{
+	// 	Name:  user.Name,
+	// 	Email: user.Email,
+	// 	Login: user.Login,
+	// }
+
+	// commitMsg := fmt.Sprintf("Updating user credentials for %s", jiraID)
+
+	// rcp := &github.RepositoryContentFileOptions{
+	// 	Message:   &commitMsg,
+	// 	Content:   y,
+	// 	SHA:       fc.SHA,
+	// 	Committer: author,
+	// }
+
+	// response, _, err := gitClient.Repositories.UpdateFile(ctx, gitUser, gitRepo, gitPath, rcp)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fmt.Println("Commit status", response)
 
 }

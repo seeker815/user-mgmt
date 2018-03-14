@@ -4,6 +4,7 @@ import (
 	"os"
 
 	jira "github.com/andygrunwald/go-jira"
+	log "github.com/sirupsen/logrus"
 )
 
 func init() {
