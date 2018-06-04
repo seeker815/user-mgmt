@@ -4,7 +4,6 @@ import (
 	"os"
 
 	jira "github.com/andygrunwald/go-jira"
-	//log "github.com/sirupsen/logrus"
 )
 
 func init() {
@@ -16,10 +15,6 @@ func init() {
 	}
 
 	// $ JIRA_USER=xxxxx JIRA_PASS=xxxx JIRA_URL=xxx ./program
-
 	username, password := os.Getenv("JIRA_USER"), os.Getenv("JIRA_PASS")
 	jiraClient.Authentication.SetBasicAuth(username, password)
-
-	// logger
-
 }
